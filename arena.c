@@ -2,6 +2,7 @@
 #include<sys/mman.h>
 #include<string.h>
 #include<assert.h>
+#include<stdint.h>
 #include "arena.h"
 
 #define ARENA_SIZE (4*1024 + sizeof(ArenaChunk)) // 4kb + 24bytes
