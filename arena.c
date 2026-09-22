@@ -5,140 +5,94 @@
 #include<stdint.h>
 #include "arena.h"
 
-#define ARENA_SIZE (4*1024 + sizeof(ArenaChunk)) // 4kb + 24bytes
+#define ARENA_SIZE (64*1024*1024) // 64mb
 #define WORD_LEN 8
+#define PAGE_SIZE 4*1024
 
-//Arena *A = {NULL};
-//static int cnt = 0;
-//static int global_alloc_cnt = 1;
 
 void ArenaAlloc(void *A){
     Arena *new_A = (Arena*)A;
-    ArenaChunk *ptr = (ArenaChunk*)mmap(NULL, ARENA_SIZE, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-    assert(ptr != MAP_FAILED && "memory allocation failed");
-    ptr->next = NULL;
-    ptr->capacity = ARENA_SIZE;
-    ptr->offset = sizeof(ArenaChunk);
-    ptr->cnt = 0;
-    memset(ptr->check_size, 0, sizeof(ptr->check_size));
-    if(new_A->first == NULL){
-        new_A->first = ptr;
-        new_A->current = new_A->first;
-        // new_A->current->next = NULL;
-        // new_A->current->capacity = ARENA_SIZE;
-        // new_A->current->offset = sizeof(ArenaChunk);
-        // memset(new_A->current->check_size, 0, sizeof(new_A->current->check_size));
-        //global_alloc_cnt++;
-    }
-    else{
-        new_A->current->next = ptr;
-        new_A->current = ptr;
-        // new_A->current->next = NULL;
-        // new_A->current->capacity = ARENA_SIZE;
-        // new_A->current->offset = sizeof(ArenaChunk);
-        // memset(new_A->current->check_size, 0, sizeof(new_A->current->check_size));
-    }
-    /*
-    A->base = ptr;
-    A->offset = 0;
-    A->capacity = ARENA_SIZE;
-    for(size_t i = 0; i<sizeof(A->check_size); ++i){
-        A->check_size[i] = 0;
-    }
-    */
-
-    //return (void*)((uint8_t*)A->current + sizeof(ArenaChunk));
+    void *ptr = mmap(NULL, ARENA_SIZE, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
+    // PROT_NONE flag will reserved the virtual memory i.e. process can not access this virtual memory 
+    assert(ptr != MAP_FAILED && "Failed to allocate arena");
+    new_A->base = (uint8_t*)ptr;
+    new_A->capacity = ARENA_SIZE;
+    new_A->offset = 0;
+    new_A->commit_position = 0;
+    new_A->cnt = 0;
+    memset(new_A->check_size, 0, sizeof(new_A->check_size));
     return;
 }
 
 void ArenaRelease(void *A){
-    /*
-    int free = munmap(ptr, A->capacity);
-    assert(free != -1, "error occured in deleting memory");
-    A->capacity = 0;
-    A->offset = 0;
-    for(size_t i = 0; i<sizeof(A->check_size); ++i){
-        A->check_size[i] = 0;
-    }
-    cnt = 0;
-    */
-   Arena *new_A = (Arena*)A;
-    ArenaChunk *ptr = new_A->first;
-    while(ptr!=NULL){
-        ArenaChunk *next = ptr->next;
-        int free = munmap(ptr, ptr->capacity);
-        assert(free != -1 && "error occured in deleting memory");
-        ptr = next;
-    }
-    new_A->first = NULL;
-    new_A->current = NULL;
+    Arena *new_A = (Arena*)A;
+    int unmap_mem = munmap(new_A->base, new_A->capacity);
+    assert(unmap_mem != -1 && "failed to free memory");
+    new_A->base = NULL;
+    new_A->capacity = 0;
+    new_A->offset = 0;
+    new_A->commit_position = 0;
+    new_A->cnt = 0;
+    memset(new_A->check_size, 0, sizeof(new_A->check_size)); 
     return;
 }
 
 void* ArenaPush(void *A, size_t size){
     Arena *new_A = (Arena*)A;
-    if(new_A->first == NULL){
-        ArenaAlloc(new_A);
-    }
     int cpu_alignment = WORD_LEN;
-    size_t aligned_offset = (new_A->current->offset+(cpu_alignment-1))&(~(cpu_alignment-1));
-    //assert(aligned_offset + size <= A->current->capacity, "Out of memory. Program crashed");
-    if(aligned_offset + size > new_A->current->capacity){
-        ArenaAlloc(new_A);
-        aligned_offset = (new_A->current->offset+(cpu_alignment-1))&(~(cpu_alignment-1));
+    size_t aligned_offset = (new_A->offset+(cpu_alignment-1))&(~(cpu_alignment-1));
+    size_t new_size = (size%WORD_LEN==0) ? size : WORD_LEN*(size/WORD_LEN + 1);
+    assert(aligned_offset+new_size <= new_A->capacity && "Memory limit exceeded");
+    size_t target_offset = aligned_offset + new_size;
+    if(new_A->commit_position < target_offset){
+        // means we have to commit virtual memory i.e. we have to create 
+        // more pages in physical memory.
+        int num_page = (target_offset-new_A->commit_position)/PAGE_SIZE;
+        int mod_page = (target_offset-new_A->commit_position)%PAGE_SIZE;
+        size_t commit_size = (mod_page == 0) ? num_page*PAGE_SIZE : (num_page+1)*PAGE_SIZE;
+        // now we use mprotect to commit the virtual memory
+        int commit_flag = mprotect(new_A->base+new_A->commit_position, commit_size, PROT_READ|PROT_WRITE);
+        assert(commit_flag != -1 && "failed to commit virtual memory");
+        void *ptr = new_A->base + aligned_offset;
+        memset((uint8_t*)ptr, 0, new_size);
+        new_A->commit_position = new_A->commit_position + commit_size;
+        new_A->offset = aligned_offset + new_size;
+        new_A->check_size[new_A->cnt++] = new_size;
+        return ptr;
     }
-    void *ptr = (uint8_t*)new_A->current + aligned_offset;
-    int rem_num = (size%8)==0 ?0 : 1;
-    size_t allocated_size = 8*(size/8 + rem_num);
-    memset(ptr, 0, allocated_size);
-    new_A->current->offset = aligned_offset + allocated_size;
-    int chunk_cnt = new_A->current->cnt;
-    assert(chunk_cnt < MAX_OBJ && "maximum size limit exceeded");
-    new_A->current->check_size[chunk_cnt] = allocated_size;
-    new_A->current->cnt++;
-    return ptr;
+    else{
+        void *ptr = new_A->base + aligned_offset;
+        memset((uint8_t*)ptr, 0, new_size);
+        new_A->offset = aligned_offset + new_size;
+        new_A->check_size[new_A->cnt++] = new_size;
+        return ptr;
+    }
 }
 
 void ArenaPop(void *A){
     Arena *new_A = (Arena*)A;
-    assert(new_A->current && new_A->current->cnt > 0);
-    int idx = new_A->current->cnt - 1;
-    new_A->current->offset = new_A->current->offset - new_A->current->check_size[idx];
-    new_A->current->cnt--;
+    assert(new_A->cnt>0);
+    int idx = new_A->cnt-1;
+    new_A->offset = new_A->offset - new_A->check_size[idx];
+    new_A->cnt--;
     return;
 }
 
-void ArenaPopTo(void *A, int pos){
+void ArenaPopFrom(void *A, int pos){
     Arena *new_A = (Arena*)A;
-    if(new_A->current && pos > 0){
-        int idx = new_A->current->cnt;
-        for(int i=idx-1; i>=pos-1; --i){
-        new_A->current->offset = new_A->current->offset - new_A->current->check_size[i];
-        new_A->current->cnt--;
-      }
+    assert(pos > 0);
+    int idx = new_A->cnt;
+    for(int i=idx-1; i>=pos-1; --i){
+        new_A->offset = new_A->offset - new_A->check_size[i];
+        new_A->cnt--;
     }
-    //cnt=cnt-pos-1;
     return;
 }
 
 void ArenaClear(void *A){
-    //A->offset = 0;
     Arena *new_A = (Arena*)A;
-    ArenaChunk *ptr = new_A->first;
-    while(ptr != NULL){
-        ArenaChunk *next = ptr->next;
-        ptr->offset = sizeof(ArenaChunk);
-        ptr->cnt = 0;
-        ptr = next;
-    }
-    new_A->current = new_A->first;
+    new_A->offset = 0;
+    new_A->cnt = 0;
+    memset(new_A->check_size, 0, sizeof(new_A->check_size));
     return;
 }
-/*
-int main(int argc, char *argv[]){
-    printf("Hello World\n");
-    //void *ptr = ArenaAlloc(); 
-    printf("%p\n", ptr);
-    return 0;
-}
-*/
