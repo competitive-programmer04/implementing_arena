@@ -9,7 +9,6 @@
 #define WORD_LEN 8
 #define PAGE_SIZE 4*1024
 
-
 void ArenaAlloc(void *A){
     Arena *new_A = (Arena*)A;
     void *ptr = mmap(NULL, ARENA_SIZE, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
@@ -94,5 +93,25 @@ void ArenaClear(void *A){
     new_A->offset = 0;
     new_A->cnt = 0;
     memset(new_A->check_size, 0, sizeof(new_A->check_size));
+    return;
+}
+
+void* PoolAlloc(Pool *pool){
+    if(pool->free_list){
+        void *ptr = pool->free_list;
+        pool->free_list = pool->free_list->next;
+        return ptr;
+    }
+    if(pool->object_size < sizeof(FreeNode)){
+        pool->object_size = sizeof(FreeNode); 
+    }
+    void *ptr = ArenaPush(pool->A, pool->object_size);
+    return ptr;
+}
+
+void PoolFree(Pool *pool, void *ptr){
+    FreeNode *node = (FreeNode*)ptr;
+    node->next = pool->free_list;
+    pool->free_list = node;
     return;
 }

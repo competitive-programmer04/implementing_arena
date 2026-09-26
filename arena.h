@@ -11,10 +11,22 @@ typedef struct Arena{
     size_t check_size[MAX_OBJ]; 
 }Arena;
 
+typedef struct FreeNode{
+    struct FreeNode *next;
+}FreeNode;
+
+typedef struct Pool{
+    Arena *A;
+    size_t object_size;
+    FreeNode *free_list;
+}Pool;
+
 void ArenaAlloc(void *A); // for creating arena
 void ArenaRelease(void *A); // to free arena
 void* ArenaPush(void *A, size_t s); // for creating a buffer in arena of size s (in bytes) from the top
 void ArenaPop(void *A); // removing the topmost/last object from arena 
 void ArenaPopFrom(void *A, int pos); // removing the objects from arena from the topmost position till pos
 void ArenaClear(void *A); // clearing arena
+void* PoolAlloc(Pool *pool); // allocating pool of memory
+void PoolFree(Pool *pool, void *ptr); // freeing pool of memory 
 #endif
