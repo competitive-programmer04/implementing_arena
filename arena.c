@@ -96,6 +96,12 @@ void ArenaClear(void *A){
     return;
 }
 
+void InitializePool(Pool *pool, Arena *A, size_t size, FreeNode *fn){
+    pool->A = A;
+    pool->object_size = size;
+    pool->free_list = fn;
+}
+
 void* PoolAlloc(Pool *pool){
     if(pool->free_list){
         void *ptr = pool->free_list;
@@ -114,4 +120,18 @@ void PoolFree(Pool *pool, void *ptr){
     node->next = pool->free_list;
     pool->free_list = node;
     return;
+}
+
+int main(void){
+    Arena A;
+    ArenaAlloc(&A);
+    printf("The base address of arena is %p:\n", A.base);
+    FreeNode fn;
+    Pool p;
+    InitializePool(&p, &A, 100, &fn);
+    char *ptr = (char*)PoolAlloc(&p);
+    printf("Virtual memory successfully allocated: %p\n", ptr);
+    ArenaRelease(&A);
+    printf("Virtual memory successfully freed\n");
+    return 0;
 }
