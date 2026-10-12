@@ -40,33 +40,33 @@ This project implements a **Chained Virtual-Address-Space Arena Allocator** comb
  Arena Core Functions
 
  - void ArenaAlloc(void *A)
- Allocates a contiguous 64MB block in process virtual address space using mmap with flag PROT_NONE
+ - Allocates a contiguous 64MB block in process virtual address space using mmap with flag PROT_NONE
 
  - void ArenaRelease(void *A)
- Unmaps the entire virtual address space and returns physical memory to the kernel via munmap.
+ - Unmaps the entire virtual address space and returns physical memory to the kernel via munmap.
  
  - void* ArenaPush(void *A, size_t s)
- Pushes an 8-byte aligned allocation to the top of the arena. Commits physical 4KB pages via mprotect as needed.
+ - Pushes an 8-byte aligned allocation to the top of the arena. Commits physical 4KB pages via mprotect as needed.
 
  - void ArenaPop(void *A)
- Pops the most recent allocation from the top of the arena stack.
+ - Pops the most recent allocation from the top of the arena stack.
 
  - void ArenaPopFrom(void *A, int pos)
- Rolls back the arena offset to a specific recorded allocation index.
+ - Rolls back the arena offset to a specific recorded allocation index.
 
  - void ArenaClear(void *A)
- Resets the arena's allocation offset to zero  in O(1) time while keeping the physical pages committed for reuse.
+ - Resets the arena's allocation offset to zero  in O(1) time while keeping the physical pages committed for reuse.
 
  Pool Allocator functions
 
  - void InitializePool(Pool *p, Arena *A, size_t size, FreeNode *fn)
- Initializes a Pool of memory to keep track of the objects.
+ - Initializes a Pool of memory to keep track of the objects.
 
  - void* PoolAlloc(Pool *pool)
-Recycles an empty slot from pool->free_list if available; otherwise, carves a fresh slot from the underlying Arena using ArenaPush.
+-Recycles an empty slot from pool->free_list if available; otherwise, carves a fresh slot from the underlying Arena using ArenaPush.
 
 - void PoolFree(Pool *pool, void *ptr)
-Recycles memory in O(1) time by casting ptr to FreeNode and pushing it to the head of free_list.
+- Recycles memory in O(1) time by casting ptr to FreeNode and pushing it to the head of free_list.
 
 
 ## Build and Usage
